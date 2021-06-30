@@ -59,13 +59,9 @@ module Chewy
       @disable_refresh_async = false
       @indices_path = 'app/chewy'
       @default_root_options = {}
-<<<<<<< HEAD
-      @default_field_type = 'keyword'.freeze
-      self.search_class = Chewy::Search::Request
-=======
+      # @default_field_type = 'keyword'.freeze
       @default_field_type = 'text'.freeze
       @search_class = build_search_class(Chewy::Search::Request)
->>>>>>> d3b72538bf1bfa29ad477caf1c390d46d140d396
     end
 
     def transport_logger=(logger)
