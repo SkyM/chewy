@@ -2,12 +2,7 @@ require 'bundler'
 
 Bundler.require
 
-begin
-  require 'active_record'
-  require 'sequel'
-rescue LoadError
-  nil
-end
+require 'active_record'
 
 require 'rspec/its'
 require 'rspec/collection_matchers'
@@ -21,14 +16,18 @@ require 'support/class_helpers'
 
 require 'chewy/rspec'
 
+host = ENV['ES_HOST'] || 'localhost'
+port = ENV['ES_PORT'] || 9250
+
 Chewy.settings = {
-  host: 'localhost:9250',
+  host: "#{host}:#{port}",
   wait_for_status: 'green',
   index: {
     number_of_shards: 1,
     number_of_replicas: 0
   }
 }
+
 # Chewy.transport_logger = Logger.new(STDERR)
 
 RSpec.configure do |config|
@@ -39,20 +38,6 @@ RSpec.configure do |config|
 
   config.include FailHelpers
   config.include ClassHelpers
-
-  Aws.config.update(stub_responses: true) if defined?(::Aws)
 end
 
-if defined?(::ActiveRecord)
-  require 'support/active_record'
-elsif defined?(::Mongoid)
-  require 'support/mongoid'
-elsif defined?(::Sequel)
-  require 'support/sequel'
-else
-  RSpec.configure do |config|
-    %i[orm mongoid active_record sequel].each do |group|
-      config.filter_run_excluding(group)
-    end
-  end
-end
+require 'support/active_record'

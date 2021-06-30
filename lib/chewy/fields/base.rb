@@ -7,7 +7,7 @@ module Chewy
       def initialize(name, value: nil, **options)
         @name = name.to_sym
         @options = {}
-        update_options!(options)
+        update_options!(**options)
         @value = value
         @children = []
       end
@@ -34,17 +34,13 @@ module Chewy
         mapping.reverse_merge!(options)
         mapping.reverse_merge!(type: (children.present? ? 'object' : Chewy.default_field_type))
 
-        # This is done to support ES2 journaling and will be removed soon
-        if mapping[:type] == 'keyword' && Chewy::Runtime.version < '5.0'
-          mapping[:type] = 'string'
-          mapping[:index] = 'not_analyzed'
-        end
-
         {name => mapping}
       end
 
       def compose(*objects)
         result = evaluate(objects)
+
+        return {} if result.blank? && ignore_blank?
 
         if children.present? && !multi_field?
           result = if result.respond_to?(:to_ary)
@@ -59,13 +55,21 @@ module Chewy
 
     private
 
+      def geo_point?
+        @options[:type].to_s == 'geo_point'
+      end
+
+      def ignore_blank?
+        @options.fetch(:ignore_blank) { geo_point? }
+      end
+
       def evaluate(objects)
         object = objects.first
 
         if value.is_a?(Proc)
           if value.arity.zero?
             object.instance_exec(&value)
-          elsif value.arity < 0
+          elsif value.arity.negative?
             value.call(*object)
           else
             value.call(*objects.first(value.arity))

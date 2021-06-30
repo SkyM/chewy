@@ -1,5 +1,5 @@
-Dir.glob(File.join(File.dirname(__FILE__), 'parameters', 'concerns', '*.rb')) { |f| require f }
-Dir.glob(File.join(File.dirname(__FILE__), 'parameters', '*.rb')) { |f| require f }
+Dir.glob(File.join(File.dirname(__FILE__), 'parameters', 'concerns', '*.rb')).sort.each { |f| require f }
+Dir.glob(File.join(File.dirname(__FILE__), 'parameters', '*.rb')).sort.each { |f| require f }
 
 module Chewy
   module Search
@@ -10,6 +10,8 @@ module Chewy
     # @see Chewy::Search::Request#parameters
     # @see Chewy::Search::Parameters::Storage
     class Parameters
+      QUERY_STRING_STORAGES = %i[indices search_type request_cache allow_partial_search_results].freeze
+
       # Default storage classes warehouse. It is probably possible to
       # add your own classes here if necessary, but I'm not sure it will work.
       #
@@ -22,6 +24,7 @@ module Chewy
 
       # @return [{Symbol => Chewy::Search::Parameters::Storage}]
       attr_accessor :storages
+
       delegate :[], :[]=, to: :storages
 
       # Accepts an initial hash as basic values or parameter storages.
@@ -33,10 +36,11 @@ module Chewy
       #     limit: Chewy::Search::Parameters::Offset.new(10)
       #   )
       # @param initial [{Symbol => Object, Chewy::Search::Parameters::Storage}]
-      def initialize(initial = {})
+      def initialize(initial = {}, **kinitial)
         @storages = Hash.new do |hash, name|
           hash[name] = self.class.storages[name].new
         end
+        initial = initial.deep_dup.merge(kinitial)
         initial.each_with_object(@storages) do |(name, value), result|
           storage_class = self.class.storages[name]
           storage = value.is_a?(storage_class) ? value : storage_class.new(value)
@@ -101,11 +105,7 @@ module Chewy
       #
       # @return [Hash] request body
       def render
-        body = @storages.except(:filter, :query, :none).values.inject({}) do |result, storage|
-          result.merge!(storage.render || {})
-        end
-        body.merge!(render_query || {})
-        body.present? ? {body: body} : {}
+        render_query_string_params.merge(render_body)
       end
 
     protected
@@ -121,9 +121,29 @@ module Chewy
 
       def assert_storages(names)
         raise ArgumentError, 'No storage names were specified' if names.empty?
+
         names = names.map(&:to_sym)
         self.class.storages.values_at(*names)
         names
+      end
+
+      def render_query_string_params
+        query_string_storages = @storages.select do |storage_name, _|
+          QUERY_STRING_STORAGES.include?(storage_name)
+        end
+
+        query_string_storages.values.inject({}) do |result, storage|
+          result.merge!(storage.render || {})
+        end
+      end
+
+      def render_body
+        exceptions = %i[filter query none] + QUERY_STRING_STORAGES
+        body = @storages.except(*exceptions).values.inject({}) do |result, storage|
+          result.merge!(storage.render || {})
+        end
+        body.merge!(render_query || {})
+        {body: body}
       end
 
       def render_query
