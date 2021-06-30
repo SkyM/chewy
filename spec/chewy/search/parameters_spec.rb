@@ -13,7 +13,7 @@ describe Chewy::Search::Parameters do
 
     specify { expect(subject.storages[:limit]).to equal(limit) }
     specify { expect(subject.storages[:limit].value).to eq(3) }
-    specify { expect(subject.storages[:order].value).to eq('foo' => nil) }
+    specify { expect(subject.storages[:order].value).to eq(['foo']) }
 
     specify { expect { described_class.new(offset: limit) }.to raise_error(TypeError) }
   end
@@ -55,7 +55,10 @@ describe Chewy::Search::Parameters do
     subject { described_class.new(limit: 10, offset: 20, order: :foo) }
 
     specify { expect { subject.only!([:limit]) }.to change { subject.clone }.to(described_class.new(limit: 10)) }
-    specify { expect { subject.only!(%i[offset order]) }.to change { subject.clone }.to(described_class.new(offset: 20, order: :foo)) }
+    specify do
+      expect { subject.only!(%i[offset order]) }
+        .to change { subject.clone }.to(described_class.new(offset: 20, order: :foo))
+    end
     specify { expect { subject.only!(%i[limit something]) }.to raise_error NameError }
     specify { expect { subject.only!([]) }.to raise_error ArgumentError }
   end
@@ -63,8 +66,14 @@ describe Chewy::Search::Parameters do
   describe '#except!' do
     subject { described_class.new(limit: 10, offset: 20, order: :foo) }
 
-    specify { expect { subject.except!([:limit]) }.to change { subject.clone }.to(described_class.new(offset: 20, order: :foo)) }
-    specify { expect { subject.except!(%i[offset order]) }.to change { subject.clone }.to(described_class.new(limit: 10)) }
+    specify do
+      expect { subject.except!([:limit]) }
+        .to change { subject.clone }.to(described_class.new(offset: 20, order: :foo))
+    end
+    specify do
+      expect { subject.except!(%i[offset order]) }
+        .to change { subject.clone }.to(described_class.new(limit: 10))
+    end
     specify { expect { subject.except!(%i[limit something]) }.to raise_error NameError }
     specify { expect { subject.except!([]) }.to raise_error ArgumentError }
   end
@@ -72,18 +81,20 @@ describe Chewy::Search::Parameters do
   describe '#merge!' do
     let(:first) { described_class.new(offset: 10, order: 'foo') }
     let(:second) { described_class.new(limit: 20, offset: 20, order: 'bar') }
+    let(:first_clone) { first.clone }
+    let(:second_clone) { second.clone }
 
     specify do
       expect { first.merge!(second) }.to change { first.clone }
         .to(described_class.new(limit: 20, offset: 20, order: %w[foo bar]))
     end
-    specify { expect { first.merge!(second) }.not_to change { second.clone } }
+    specify { expect { first.merge!(second) }.not_to change { second_clone } }
 
     specify do
       expect { second.merge!(first) }.to change { second.clone }
         .to(described_class.new(limit: 20, offset: 10, order: %w[bar foo]))
     end
-    specify { expect { second.merge!(first) }.not_to change { first.clone } }
+    specify { expect { second.merge!(first) }.not_to change { first_clone } }
 
     context 'spawns new storages for the merge' do
       let(:names) { %i[limit offset order] }
@@ -100,7 +111,22 @@ describe Chewy::Search::Parameters do
     subject { described_class.new(offset: 10, order: 'foo') }
 
     specify { expect(subject.render).to eq(body: {from: 10, sort: ['foo']}) }
-    specify { expect(described_class.new.render).to eq({}) }
+    specify { expect(described_class.new.render).to eq(body: {}) }
+
+    context do
+      subject { described_class.new(request_cache: true) }
+      specify { expect(subject.render).to eq(body: {}, request_cache: true) }
+    end
+
+    context do
+      subject { described_class.new(search_type: 'query_then_fetch') }
+      specify { expect(subject.render).to eq(body: {}, search_type: 'query_then_fetch') }
+    end
+
+    context do
+      subject { described_class.new(allow_partial_search_results: true) }
+      specify { expect(subject.render).to eq(body: {}, allow_partial_search_results: true) }
+    end
 
     context do
       subject { described_class.new(query: {foo: 'bar'}, filter: {moo: 'baz'}) }
@@ -124,7 +150,7 @@ describe Chewy::Search::Parameters do
 
     context do
       subject { described_class.new(filter: {moo: 'baz'}, none: true) }
-      specify { expect(subject.render).to eq(body: {query: {bool: {filter: {bool: {must_not: {match_all: {}}}}}}}) }
+      specify { expect(subject.render).to eq(body: {query: {match_none: {}}}) }
     end
   end
 end

@@ -14,7 +14,9 @@ module Chewy
         if Rails.application.config.respond_to?(:assets) && env['PATH_INFO'].start_with?(Rails.application.config.assets.prefix)
           @app.call(env)
         else
-          Chewy.logger.info("Chewy request strategy is `#{Chewy.request_strategy}`") if Chewy.logger && @request_strategy != Chewy.request_strategy
+          if Chewy.logger && @request_strategy != Chewy.request_strategy
+            Chewy.logger.info("Chewy request strategy is `#{Chewy.request_strategy}`")
+          end
           @request_strategy = Chewy.request_strategy
           Chewy.strategy(Chewy.request_strategy) { @app.call(env) }
         end
@@ -22,17 +24,6 @@ module Chewy
     end
 
     module MigrationStrategy
-      extend ActiveSupport::Concern
-      included do
-        alias_method_chain :migrate, :chewy
-      end
-
-      def migrate_with_chewy(*args)
-        Chewy.strategy(:bypass) { migrate_without_chewy(*args) }
-      end
-    end
-
-    module Rails5MigrationStrategy
       def migrate(*args)
         Chewy.strategy(:bypass) { super }
       end
@@ -46,7 +37,7 @@ module Chewy
       if app.sandbox?
         Chewy.strategy(:bypass)
       else
-        Chewy.strategy(:urgent)
+        Chewy.strategy(Chewy.console_strategy)
       end
       puts "Chewy console strategy is `#{Chewy.strategy.current.name}`"
     end
@@ -57,18 +48,13 @@ module Chewy
 
     initializer 'chewy.migration_strategy' do
       ActiveSupport.on_load(:active_record) do
-        if Rails::VERSION::MAJOR >= 5
-          ActiveRecord::Migration.prepend(Rails5MigrationStrategy)
-          ActiveRecord::Migrator.prepend(Rails5MigrationStrategy) if defined? ActiveRecord::Migrator
-        else
-          ActiveRecord::Migration.send(:include, MigrationStrategy)
-          ActiveRecord::Migrator.send(:include, MigrationStrategy) if defined? ActiveRecord::Migrator
-        end
+        ActiveRecord::Migration.prepend(MigrationStrategy)
+        ActiveRecord::Migrator.prepend(MigrationStrategy) if defined? ActiveRecord::Migrator
       end
     end
 
     initializer 'chewy.request_strategy' do |app|
-      app.config.middleware.insert_after(Rails::Rack::Logger, RequestStrategy)
+      app.config.middleware.insert_before(ActionDispatch::ShowExceptions, RequestStrategy)
     end
 
     initializer 'chewy.add_indices_path' do |_app|
